@@ -156,13 +156,13 @@ def get_candles_prices(ticker, token, days_back=60):
                 figi = inst.figi
                 break
         if figi is None:
-            return None
+            return None, f'figi не найден для {ticker}, варианты: {[(i.ticker, i.instrument_type) for i in r.instruments[:5]]}'
         rc = client.market_data.get_candles(
             figi=figi, from_=from_dt, to=now,
             interval=CandleInterval.CANDLE_INTERVAL_DAY,
         )
-    return [dict_cast_money({'units': c.close.units, 'nano': c.close.nano}) for c in rc.candles]
-
+        prices = [dict_cast_money({'units': c.close.units, 'nano': c.close.nano}) for c in rc.candles]
+        return prices, f'figi={figi}, свечей={len(prices)}'
 
 def compute_conv_input(prices, fit_size=CONV_FIT_SIZE, trhd=250):
     if not prices or len(prices) < 2:
