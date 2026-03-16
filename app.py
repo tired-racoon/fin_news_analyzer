@@ -4,9 +4,10 @@ import numpy as np
 import torch
 import pytz
 import tensorflow as tf
-from tensorflow.keras import layers
 import streamlit as st
+from tensorflow.keras import layers
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from t_tech.invest import Client, CandleInterval
 
 st.set_page_config(
     page_title="FinNews Analyzer",
@@ -145,26 +146,22 @@ def dict_cast_money(v):
 
 
 def get_candles_prices(ticker, token, days_back=60):
-    try:
-        from t_tech.invest import Client, CandleInterval
-        now     = datetime.datetime.now(pytz.utc)
-        from_dt = now - datetime.timedelta(days=days_back)
-        with Client(token) as client:
-            r    = client.instruments.find_instrument(query=ticker)
-            figi = None
-            for inst in r.instruments:
-                if inst.ticker == ticker and inst.instrument_type == 'share':
-                    figi = inst.figi
-                    break
-            if figi is None:
-                return None
-            rc = client.market_data.get_candles(
-                figi=figi, from_=from_dt, to=now,
-                interval=CandleInterval.CANDLE_INTERVAL_DAY,
-            )
-        return [dict_cast_money({'units': c.close.units, 'nano': c.close.nano}) for c in rc.candles]
-    except Exception:
-        return None
+    now     = datetime.datetime.now(pytz.utc)
+    from_dt = now - datetime.timedelta(days=days_back)
+    with Client(token) as client:
+        r    = client.instruments.find_instrument(query=ticker)
+        figi = None
+        for inst in r.instruments:
+            if inst.ticker == ticker and inst.instrument_type == 'share':
+                figi = inst.figi
+                break
+        if figi is None:
+            return None
+        rc = client.market_data.get_candles(
+            figi=figi, from_=from_dt, to=now,
+            interval=CandleInterval.CANDLE_INTERVAL_DAY,
+        )
+    return [dict_cast_money({'units': c.close.units, 'nano': c.close.nano}) for c in rc.candles]
 
 
 def compute_conv_input(prices, fit_size=CONV_FIT_SIZE, trhd=250):
@@ -210,20 +207,17 @@ def load_ticker_model():
 
 @st.cache_resource(show_spinner=False)
 def load_conv_model():
-    try:
-        conv_model = tf.keras.Sequential()
-        conv_model.add(layers.Conv1D(32, kernel_size=3, activation='relu', input_shape=(conv_fit_size, 1)))
-        conv_model.add(layers.Conv1D(64, kernel_size=3, activation='relu'))
-        conv_model.add(layers.MaxPooling1D(pool_size=2))
-        conv_model.add(layers.Dropout(0.25))
-        conv_model.add(layers.Flatten())
-        conv_model.add(layers.Dense(128, activation='relu'))
-        conv_model.add(layers.Dense(64, activation='linear'))
-        conv_model.add(layers.Dense(1, activation='linear'))
-
-        conv_model.load_weights('./conv_acc-29,9')
-    except Exception:
-        return None
+    conv_model = tf.keras.Sequential()
+    conv_model.add(layers.Conv1D(32, kernel_size=3, activation='relu', input_shape=(CONV_FIT_SIZE, 1)))
+    conv_model.add(layers.Conv1D(64, kernel_size=3, activation='relu'))
+    conv_model.add(layers.MaxPooling1D(pool_size=2))
+    conv_model.add(layers.Dropout(0.25))
+    conv_model.add(layers.Flatten())
+    conv_model.add(layers.Dense(128, activation='relu'))
+    conv_model.add(layers.Dense(64, activation='linear'))
+    conv_model.add(layers.Dense(1, activation='linear'))
+    conv_model.load_weights('./conv_acc-29,9')
+    return conv_model
 
 
 def get_relevant_tickers_kw(text):
@@ -264,21 +258,18 @@ def get_relevant_tickers_combined(text, tok_t, model_t, threshold=BEST_THRESH):
 
 
 def conv_predict(text, conv_model_obj, token):
-    try:
-        tickers_found = get_relevant_tickers_kw(text)
-        if not tickers_found or conv_model_obj is None:
-            return None
-        results = {}
-        for ticker in tickers_found:
-            prices = get_candles_prices(ticker, token)
-            inp    = compute_conv_input(prices)
-            if inp is None:
-                continue
-            raw = conv_model_obj.predict(inp.reshape(1, -1), verbose=0)
-            results[ticker] = float(raw[0][0])
-        return results if results else None
-    except Exception:
+    tickers_found = get_relevant_tickers_kw(text)
+    if not tickers_found:
         return None
+    results = {}
+    for ticker in tickers_found:
+        prices = get_candles_prices(ticker, token)
+        inp    = compute_conv_input(prices)
+        if inp is None:
+            continue
+        raw = conv_model_obj.predict(inp.reshape(1, CONV_FIT_SIZE, 1), verbose=0)
+        results[ticker] = float(raw[0][0])
+    return results if results else None
 
 
 def render_prob_bars(probs):
@@ -332,7 +323,7 @@ with col_input:
         tbank_tok = st.text_input(
             "Токен Т-Инвестиций",
             type="password",
-            help="Нужен для получения котировок. conv_model.h5 должен лежать в корне репо.",
+            help="Нужен для получения котировок. conv_acc-29,9 должен лежать в корне репо.",
         )
 
     st.markdown('<div class="section-title">Примеры</div>', unsafe_allow_html=True)
@@ -434,10 +425,8 @@ with col_results:
             if not tbank_tok:
                 st.markdown('<div class="metric-card"><div style="color:#555570;font-family:\'IBM Plex Mono\',monospace;font-size:0.82rem">Введите токен Т-Инвестиций выше</div></div>', unsafe_allow_html=True)
             else:
-                conv_obj = load_conv_model()
-                if conv_obj is None:
-                    st.markdown('<div class="metric-card"><div style="color:#555570;font-family:\'IBM Plex Mono\',monospace;font-size:0.82rem">conv_model.h5 не найден в корне репозитория</div></div>', unsafe_allow_html=True)
-                else:
+                try:
+                    conv_obj = load_conv_model()
                     with st.spinner("Загружаем котировки..."):
                         conv_results = conv_predict(news_text, conv_obj, tbank_tok)
                     if conv_results:
@@ -449,6 +438,8 @@ with col_results:
                         st.markdown(f'<div class="metric-card"><div class="label">conv_model · прогноз по тикерам</div>{rows}</div>', unsafe_allow_html=True)
                     else:
                         st.markdown('<div class="metric-card"><div style="color:#555570;font-family:\'IBM Plex Mono\',monospace;font-size:0.82rem">Нет данных котировок для прогноза</div></div>', unsafe_allow_html=True)
+                except Exception as e:
+                    st.markdown(f'<div class="metric-card"><div style="color:#ff4466;font-family:\'IBM Plex Mono\',monospace;font-size:0.82rem">Ошибка conv_model: {e}</div></div>', unsafe_allow_html=True)
 
     elif run_btn:
         st.markdown('<div style="color:#444460;font-family:\'IBM Plex Mono\',monospace;font-size:0.85rem;padding:2rem 0">// введите текст новости</div>', unsafe_allow_html=True)
