@@ -3,4 +3,6 @@ torch>=2.0.0
 transformers>=4.40.0
 accelerate>=1.1.0
 numpy>=1.24.0
-joblib>=1.3.0
+pytz
+t-tech-investments --index-url https://opensource.tbank.ru/api/v4/projects/238/packages/pypi/simple
+tensorflow>=2.13.0
