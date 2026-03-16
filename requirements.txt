@@ -4,5 +4,6 @@ transformers>=4.40.0
 accelerate>=1.1.0
 numpy>=1.24.0
 pytz
+tensorflow>=2.11
 --extra-index-url https://opensource.tbank.ru/api/v4/projects/238/packages/pypi/simple
 t-tech-investments
