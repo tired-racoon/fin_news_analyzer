@@ -262,13 +262,18 @@ def conv_predict(text, conv_model_obj, token):
     if not tickers_found:
         return None
     results = {}
+    debug   = []
     for ticker in tickers_found:
-        prices = get_candles_prices(ticker, token)
-        inp    = compute_conv_input(prices)
+        prices, info = get_candles_prices(ticker, token)
+        debug.append(f'{ticker}: {info}')
+        if prices is None:
+            continue
+        inp = compute_conv_input(prices)
         if inp is None:
             continue
         raw = conv_model_obj.predict(inp.reshape(1, CONV_FIT_SIZE, 1), verbose=0)
         results[ticker] = float(raw[0][0])
+    st.code('\n'.join(debug))
     return results if results else None
 
 
