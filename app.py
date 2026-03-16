@@ -147,23 +147,28 @@ def dict_cast_money(v):
 
 def get_candles_prices(ticker, token, days_back=40):
     with Client(token) as client:
-        try:
-            rc = client.market_data.get_candles(
-                figi=ticker,
-                from_=(datetime.datetime(datetime.datetime.now().year,
-                                         datetime.datetime.now().month,
-                                         datetime.datetime.now().day) - datetime.timedelta(days=days_back)),
-                to=datetime.datetime(datetime.datetime.now().year,
-                                      datetime.datetime.now().month,
-                                      datetime.datetime.now().day),
-                interval=CandleInterval.CANDLE_INTERVAL_DAY,
-            )
-            prices = []
-            for c in rc.candles:
-                prices.append(dict_cast_money({'units': c.close.units, 'nano': c.close.nano}))
-            return prices, f'figi={ticker}, свечей={len(prices)}'
-        except Exception as e:
-            return None, f'ошибка: {e}'
+        r    = client.instruments.find_instrument(query=ticker)
+        figi = None
+        for inst in r.instruments:
+            if (inst.ticker == ticker
+                    and inst.instrument_type == 'share'
+                    and inst.class_code == 'TQBR'):
+                figi = inst.figi
+                break
+        if figi is None:
+            return None, f'figi не найден для {ticker}, варианты: {[(i.ticker, i.class_code, i.figi) for i in r.instruments[:5]]}'
+        rc = client.market_data.get_candles(
+            figi=figi,
+            from_=(datetime.datetime(datetime.datetime.now().year,
+                                     datetime.datetime.now().month,
+                                     datetime.datetime.now().day) - datetime.timedelta(days=days_back)),
+            to=datetime.datetime(datetime.datetime.now().year,
+                                  datetime.datetime.now().month,
+                                  datetime.datetime.now().day),
+            interval=CandleInterval.CANDLE_INTERVAL_DAY,
+        )
+        prices = [dict_cast_money({'units': c.close.units, 'nano': c.close.nano}) for c in rc.candles]
+        return prices, f'figi={figi}, свечей={len(prices)}'
 
 def compute_conv_input(prices, fit_size=CONV_FIT_SIZE, trhd=250):
     if not prices or len(prices) < 2:
