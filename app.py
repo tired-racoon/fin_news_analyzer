@@ -145,7 +145,7 @@ def dict_cast_money(v):
     return v['units'] + v['nano'] / 1e9
 
 
-def get_candles_prices(ticker, token, days_back=60):
+def get_candles_prices(ticker, token, days_back=400):
     now     = datetime.datetime.now(pytz.utc)
     from_dt = now - datetime.timedelta(days=days_back)
     with Client(token) as client:
@@ -156,9 +156,11 @@ def get_candles_prices(ticker, token, days_back=60):
                 figi = inst.figi
                 break
         if figi is None:
-            return None, f'figi не найден для {ticker}, варианты: {[(i.ticker, i.instrument_type) for i in r.instruments[:5]]}'
+            return None, f'figi не найден для {ticker}'
         rc = client.market_data.get_candles(
-            figi=figi, from_=from_dt, to=now,
+            figi=figi,
+            from_=datetime.datetime(from_dt.year, from_dt.month, from_dt.day),
+            to=datetime.datetime(now.year, now.month, now.day),
             interval=CandleInterval.CANDLE_INTERVAL_DAY,
         )
         prices = [dict_cast_money({'units': c.close.units, 'nano': c.close.nano}) for c in rc.candles]
